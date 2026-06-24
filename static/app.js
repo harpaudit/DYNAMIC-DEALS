@@ -2,6 +2,7 @@ const STORAGE_KEY = "apex_dynamic_deals";
 const TEAMS_STORAGE_KEY = "apex_dynamic_known_teams";
 const STATUS_OPTIONS = ["M1", "Site Survey", "CAD", "AHJ", "Install Ready", "Install Scheduled", "Installing", "Post Install"];
 const STATUS_MIGRATIONS = { "CAD AHJ Install Ready": "Install Ready" };
+const PAY_DAYS_AFTER_INSTALL = 30;
 
 const form = document.getElementById("deal-form");
 const formTitle = document.getElementById("form-title");
@@ -28,6 +29,8 @@ const dpNextBtn = document.getElementById("dp-next");
 const dpTodayBtn = document.getElementById("dp-today");
 const dpClearBtn = document.getElementById("dp-clear");
 const rowActionsMenu = document.getElementById("row-actions-menu");
+const overdueBanner = document.getElementById("overdue-banner");
+const overdueBannerText = document.getElementById("overdue-banner-text");
 
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
@@ -41,6 +44,7 @@ let datePickerViewYear = null;
 let datePickerViewMonth = null;
 let actionsMenuTargetId = null;
 let actionsMenuTriggerEl = null;
+let overdueOnly = false;
 
 function loadDeals() {
   try {
@@ -237,6 +241,29 @@ function formatDate(value) {
   return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
 
+function addDaysToIso(iso, days) {
+  const [year, month, day] = iso.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  date.setDate(date.getDate() + days);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function todayIso() {
+  const today = new Date();
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+}
+
+function getExpectedPayDate(deal) {
+  return deal.installedDate ? addDaysToIso(deal.installedDate, PAY_DAYS_AFTER_INSTALL) : null;
+}
+
+function isOverdue(deal) {
+  const expectedPayDate = getExpectedPayDate(deal);
+  if (!expectedPayDate) return false;
+  if (Number(deal.paidValue) > 0) return false;
+  return expectedPayDate < todayIso();
+}
+
 function renderKPIs() {
   const totalDeals = deals.length;
   const dealsWithPayments = deals.filter((d) => Number(d.paidValue) > 0).length;
@@ -273,9 +300,25 @@ function renderStatusTabs() {
     .join("");
 }
 
+function renderOverdueBanner() {
+  const overdueCount = deals.filter(isOverdue).length;
+  if (overdueCount === 0) {
+    overdueOnly = false;
+    overdueBanner.classList.add("hidden");
+    return;
+  }
+
+  overdueBanner.classList.remove("hidden");
+  overdueBanner.classList.toggle("bg-red-100", overdueOnly);
+  overdueBannerText.textContent = overdueOnly
+    ? `Showing ${overdueCount} overdue deal${overdueCount === 1 ? "" : "s"} only — click to show all deals.`
+    : `${overdueCount} deal${overdueCount === 1 ? "" : "s"} ${overdueCount === 1 ? "has" : "have"} an overdue payment — installed more than ${PAY_DAYS_AFTER_INSTALL} days ago with no payment recorded. Click to view.`;
+}
+
 function getFilteredSortedDeals() {
   const query = searchInput.value.trim().toLowerCase();
   let result = deals.filter((d) => {
+    if (overdueOnly && !isOverdue(d)) return false;
     if (statusFilter && d.status !== statusFilter) return false;
     if (!query) return true;
     return [d.dealName, d.closer, d.setter, d.team]
@@ -302,6 +345,7 @@ function renderTable(list) {
   emptyStateDesktop.classList.toggle("hidden", list.length > 0);
 
   list.forEach((d) => {
+    const overdue = isOverdue(d);
     const tr = document.createElement("tr");
     tr.className = "hover:bg-slate-50";
     tr.innerHTML = `
@@ -309,6 +353,10 @@ function renderTable(list) {
       <td class="py-2 pr-4">${escapeHtml(d.status)}</td>
       <td class="py-2 pr-4">${formatDate(d.dateSold)}</td>
       <td class="py-2 pr-4">${formatDate(d.installedDate)}</td>
+      <td class="py-2 pr-4">
+        ${formatDate(getExpectedPayDate(d))}
+        ${overdue ? '<span class="ml-1 inline-block text-[10px] font-semibold uppercase tracking-wide text-red-700 bg-red-100 px-1.5 py-0.5 rounded">Overdue</span>' : ""}
+      </td>
       <td class="py-2 pr-4">${formatKw(d.systemSize)}</td>
       <td class="py-2 pr-4">${escapeHtml(dashIfEmpty(d.closer))}</td>
       <td class="py-2 pr-4">${escapeHtml(dashIfEmpty(d.setter))}</td>
@@ -334,6 +382,7 @@ function renderCards(list) {
   emptyStateMobile.classList.toggle("hidden", list.length > 0);
 
   list.forEach((d) => {
+    const overdue = isOverdue(d);
     const card = document.createElement("div");
     card.className = "border border-slate-200 rounded-md p-4 space-y-1.5";
     card.innerHTML = `
@@ -344,6 +393,10 @@ function renderCards(list) {
       <div class="grid grid-cols-2 gap-1 text-sm text-slate-600">
         <p><span class="text-slate-400">Date Sold:</span> ${formatDate(d.dateSold)}</p>
         <p><span class="text-slate-400">Installed:</span> ${formatDate(d.installedDate)}</p>
+        <p>
+          <span class="text-slate-400">Expected Pay:</span> ${formatDate(getExpectedPayDate(d))}
+          ${overdue ? '<span class="ml-1 inline-block text-[10px] font-semibold uppercase tracking-wide text-red-700 bg-red-100 px-1.5 py-0.5 rounded">Overdue</span>' : ""}
+        </p>
         <p><span class="text-slate-400">Size:</span> ${formatKw(d.systemSize)}</p>
         <p><span class="text-slate-400">Closer:</span> ${escapeHtml(dashIfEmpty(d.closer))}</p>
         <p><span class="text-slate-400">Setter:</span> ${escapeHtml(dashIfEmpty(d.setter))}</p>
@@ -382,6 +435,7 @@ function rerenderList() {
 function rerenderAll() {
   renderKPIs();
   renderStatusTabs();
+  renderOverdueBanner();
   rerenderList();
 }
 
@@ -529,6 +583,14 @@ tableBody.addEventListener("click", handleListClick);
 cardsContainer.addEventListener("click", handleListClick);
 searchInput.addEventListener("input", rerenderList);
 sortSelect.addEventListener("change", rerenderList);
+overdueBanner.addEventListener("click", () => {
+  overdueOnly = !overdueOnly;
+  if (overdueOnly) {
+    statusFilter = "";
+    searchInput.value = "";
+  }
+  rerenderAll();
+});
 statusTabsContainer.addEventListener("click", (e) => {
   const btn = e.target.closest("[data-status]");
   if (!btn) return;
