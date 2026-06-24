@@ -1,0 +1,57 @@
+# Contexto del proyecto
+
+> Este archivo se actualiza en cada sesión de trabajo. Al iniciar, léelo para recuperar el contexto; al finalizar, actualízalo con lo nuevo.
+
+## Objetivo del proyecto
+Prototipo funcional de aplicación web para registrar y auditar ventas de paneles solares para **APEX**, en colaboración con la instaladora **DYNAMIC**.
+
+## Estado actual
+Prototipo funcional construido y verificado en `DYNAMIC DEALS/`:
+- `app.py` — FastAPI sirviendo archivos estáticos.
+- `static/index.html` — layout SPA (KPIs, formulario, tabla/tarjetas).
+- `static/app.js` — lógica de negocio: CRUD en `localStorage`, validación, cálculo de KPIs, búsqueda y orden.
+- `requirements.txt` — fastapi + uvicorn.
+
+Verificado con Playwright (Chromium headless): KPIs en 0 al cargar, validación de campos requeridos, alta de deals, búsqueda por closer/setter/team, las 4 opciones de orden, persistencia tras reload, y colapso responsive tabla→tarjetas en mobile. Sin errores de consola.
+
+Se agregó edición y borrado de deals: botones "Edit"/"Delete" en cada fila/tarjeta. Edit precarga el formulario (título cambia a "Edit Deal", botón a "Save Changes"). Delete pide confirmación con `window.confirm` antes de borrar. Ambos verificados con Playwright incluyendo cancelar edición y descartar el confirm de borrado.
+
+El formulario de alta/edición ahora vive en un modal (`#deal-modal`), no inline en la página. Se abre con el botón "+ New Deal" (junto al título "Deals") o con "Edit" en una fila/tarjeta. Se cierra con la "X", el botón "Cancel", clic en el backdrop, o tecla Escape; al cerrar siempre se resetea el formulario y el estado de edición. Verificado con Playwright: apertura/cierre por las 4 vías, validación dentro del modal, que el submit válido cierra el modal y refleja el cambio en la tabla/KPIs, y que clic dentro del modal no lo cierra.
+
+El campo "Team" tiene autocompletado: cada nombre de equipo escrito se guarda en una lista propia en `localStorage` (clave `apex_dynamic_known_teams`, vía `<datalist id="team-options">` enlazado al input con `list="team-options"`). La próxima vez que se abra el modal, ese nombre aparece como opción sugerida. La lista persiste aunque se borre el deal que lo usó (no depende de los deals activos). Sin deduplicación case-insensitive (prototipo simple). Verificado con Playwright: opciones aparecen tras crear, no se duplican al reusar un nombre, sobreviven a borrar el deal y a un reload.
+
+Se agregó una barra de pestañas de status debajo de los KPIs (`#status-tabs`), inspirada en un screenshot de referencia que mostró el usuario (estilo "All / M1 / Site Survey / ..." con conteo entre paréntesis). "All" muestra todos los deals; cada pestaña de status filtra la tabla/tarjetas a solo esos deals. Los conteos se recalculan en cada `rerenderAll()`. El filtro de status se combina con la búsqueda de texto (AND). Es estado transitorio de UI, no se persiste en `localStorage` (al recargar vuelve a "All"). Verificado con Playwright: conteos correctos, filtrado por cada status, combinación con búsqueda, estado vacío cuando un status no tiene deals, y conteos actualizados tras borrar un deal.
+
+Los campos "Date Sold" e "Installed Date" del modal dejaron de ser `<input type="date">` nativos y pasaron a ser inputs de texto con máscara MM/DD/YYYY (auto-inserta las barras al escribir solo dígitos). Causa raíz: Safari en macOS formatea `<input type="date">` según la región del sistema operativo, no según el atributo `lang` de la página — por eso se veía dd/mm/yyyy aunque la página dijera `lang="en"`. Con un input de texto enmascarado el formato queda 100% bajo control de la app, sin depender del navegador/SO. Internamente se sigue guardando como ISO `YYYY-MM-DD` (sin cambios en storage/orden), convertido en `displayDateToIso()` / `isoToDisplayDate()` en `app.js`. Se valida que sea una fecha real (rechaza ej. 30 de febrero) y que esté completa; "Installed Date" sigue siendo opcional. Se perdió el datepicker nativo del calendario como trade-off. Verificado con Playwright simulando un navegador en locale `es-MX` (el escenario que rompía antes): máscara al escribir, guardado/edición con conversión correcta, rechazo de fecha inválida e incompleta, persistencia tras reload.
+
+Se recuperó el selector visual de calendario, pero construido a mano en JS (no el nativo del navegador, para no reintroducir el problema de locale). Cada campo de fecha tiene un ícono de calendario (`.date-picker-trigger`) que abre un popup compartido (`#date-picker-popup`, posicionado `fixed` y reusado para ambos campos) con navegación de mes (`‹ ›`), grilla de días, botón "Today" y "Clear". Al seleccionar un día se escribe directo en formato MM/DD/YYYY en el input enfocado. Se cierra con: click en un día, click fuera (dentro o fuera del modal), Escape (primero cierra el picker, un segundo Escape cierra el modal), o scroll dentro del modal (para evitar que quede mal posicionado, ya que la posición se calcula solo al abrir). Verificado con Playwright: apertura, navegación de mes, selección resaltada al reabrir (incluso en edición con fecha ya guardada), Today, Clear, las distintas formas de cerrar, y flujo completo de creación con fecha elegida por calendario.
+
+**Cómo correrlo:**
+- Opción rápida: doble clic en `Abrir APEX-DYNAMIC Deals.app` (levanta el servidor si no está corriendo y abre el navegador en `http://127.0.0.1:8000/`). Internamente llama a `launch.sh`, que está en la misma carpeta.
+- Manual:
+```bash
+cd "DYNAMIC DEALS"
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app:app --reload
+```
+Abrir `http://127.0.0.1:8000/`.
+
+## Decisiones tomadas
+- Stack: Python (FastAPI) sirviendo una SPA estática en HTML/Tailwind CDN/JS vanilla — sin backend de datos ni ORM.
+- Persistencia: 100% en `localStorage` del navegador (clave `apex_dynamic_deals`), sin base de datos.
+- Sin autenticación, sin login.
+- Esquema de Deal: id, dealName, status (8 opciones exactas: M1, Site Survey, CAD, AHJ, Install Ready, Install Scheduled, Installing, Post Install), dateSold, installedDate (opcional), systemSize, closer, setter, team, paidValue (manual, no calculado).
+- "CAD AHJ Install Ready" se separó en 3 status independientes: CAD, AHJ, Install Ready (pidió el usuario tras ver que en la app de referencia eran etapas distintas del pipeline). Migración automática en `app.js`: cualquier deal guardado con el status viejo combinado se remapea a "Install Ready" la primera vez que se abre la app (vía `STATUS_MIGRATIONS`), y se persiste. Verificado con Playwright sembrando un deal con el status legacy y confirmando que migra, se ve correcto en tabla/dropdown/tabs, y no se re-ejecuta de forma destructiva en reloads posteriores.
+- Alcance: crear + editar + borrar + listar + buscar + ordenar + KPIs.
+- Campos opcionales vacíos o en 0 se muestran como "-" en la tabla/tarjetas.
+
+Los botones inline "Edit"/"Delete" de cada fila/tarjeta se reemplazaron por un único botón kebab (ícono ⋮, `data-action="menu"`) que abre un menú flotante compartido (`#row-actions-menu`, `position: fixed`, mismo patrón que el date picker) con las opciones "Edit" y "Delete". Se posiciona junto al botón que lo abrió (alineado a la derecha, sin desbordar la ventana). Se cierra con: click en otra parte de la página, Escape, o al elegir una opción; si se hace scroll mientras está abierto, el menú se reposiciona para seguir al botón en vez de cerrarse (evita que un re-foco/scroll del navegador al hacer click lo cierre de inmediato). Verificado con Playwright en tabla y en tarjetas: apertura/cierre por las distintas vías, que cada kebab abre el menú para su propio deal, que Edit precarga el modal correcto, que Delete sigue pidiendo confirmación, y que el reposicionamiento en scroll sigue al botón en píxeles exactos.
+
+## Próximos pasos
+- Definir paleta de marca cuando esté disponible (hoy usa estilo neutro Tailwind).
+- Evaluar si en el futuro se requiere persistencia real (backend + DB) en vez de localStorage.
+
+## Notas
+- La carpeta del proyecto se movió de `OneDrive-HARPAudit/PROTOTIPOS CLAUDE/DYNAMIC DEALS` a `OneDrive-HARPAudit/Archivos de Juan Fernandez - APEX/PROTOTIPOS CLAUDE/DYNAMIC DEALS`. Tanto `launch.sh` como el `.app` se autolocalizan en tiempo de ejecución (no tienen rutas absolutas quemadas), así que sobreviven a futuros movimientos de la carpeta completa.
+- Importante: si la carpeta se mueve, el `.venv` queda roto (los venv de Python no son reubicables: sus scripts tienen la ruta absoluta vieja grabada). Si el launcher falla tras mover la carpeta, borrar `.venv` y volver a abrir la app/`launch.sh` — se recrea solo.

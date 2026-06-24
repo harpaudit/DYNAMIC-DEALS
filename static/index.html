@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>APEX x DYNAMIC | Deal Tracker</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen">
+
+  <header class="bg-white border-b border-slate-200">
+    <div class="max-w-6xl mx-auto px-4 py-4">
+      <h1 class="text-xl font-semibold text-slate-900">APEX <span class="text-slate-400">×</span> DYNAMIC</h1>
+      <p class="text-sm text-slate-500">Solar deal tracking &amp; audit prototype</p>
+    </div>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-4 py-6 space-y-8">
+
+    <!-- A. KPI Dashboard -->
+    <section>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
+          <p class="text-xs font-medium text-slate-500 uppercase tracking-wide">Total Active Deals</p>
+          <p id="kpi-total-deals" class="text-2xl font-bold text-slate-900 mt-1">0</p>
+        </div>
+        <div class="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
+          <p class="text-xs font-medium text-slate-500 uppercase tracking-wide">Deals with Payments</p>
+          <p id="kpi-deals-with-payments" class="text-2xl font-bold text-slate-900 mt-1">0</p>
+        </div>
+        <div class="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
+          <p class="text-xs font-medium text-slate-500 uppercase tracking-wide">Total Collected ($)</p>
+          <p id="kpi-total-collected" class="text-2xl font-bold text-slate-900 mt-1">$0</p>
+        </div>
+        <div class="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
+          <p class="text-xs font-medium text-slate-500 uppercase tracking-wide">Total kW Sold</p>
+          <p id="kpi-total-kw" class="text-2xl font-bold text-slate-900 mt-1">0 kW</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- B. Status Filter Tabs -->
+    <section class="bg-white rounded-lg border border-slate-200 shadow-sm px-2">
+      <div id="status-tabs" class="flex gap-1 overflow-x-auto"></div>
+    </section>
+
+    <!-- C. Filters + Table -->
+    <section class="bg-white rounded-lg border border-slate-200 shadow-sm p-5">
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+        <div class="flex items-center gap-3">
+          <h2 class="text-base font-semibold text-slate-900">Deals</h2>
+          <button type="button" id="open-create-modal-btn"
+                  class="bg-slate-900 text-white text-sm font-medium px-4 py-2 rounded-md hover:bg-slate-700 transition">
+            + New Deal
+          </button>
+        </div>
+        <div class="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+          <input id="search-input" type="text" placeholder="Search by name, closer, setter or team…"
+                 class="w-full sm:w-64 rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400">
+          <select id="sort-select"
+                  class="w-full sm:w-64 rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400">
+            <option value="">Sort by…</option>
+            <option value="paidValueDesc">Paid Value: Highest to Lowest</option>
+            <option value="systemSizeDesc">System Size (kW): Highest to Lowest</option>
+            <option value="dateSoldAsc">Date Sold: Oldest to Newest</option>
+            <option value="dateSoldDesc">Date Sold: Newest to Oldest</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Desktop table -->
+      <div class="hidden md:block overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-left text-xs font-medium text-slate-500 uppercase tracking-wide border-b border-slate-200">
+              <th class="py-2 pr-4">Deal Name</th>
+              <th class="py-2 pr-4">Status</th>
+              <th class="py-2 pr-4">Date Sold</th>
+              <th class="py-2 pr-4">Installed</th>
+              <th class="py-2 pr-4">Size (kW)</th>
+              <th class="py-2 pr-4">Closer</th>
+              <th class="py-2 pr-4">Setter</th>
+              <th class="py-2 pr-4">Team</th>
+              <th class="py-2 pr-4">Paid ($)</th>
+              <th class="py-2 pr-4 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="deals-table-body" class="divide-y divide-slate-100">
+          </tbody>
+        </table>
+        <p id="empty-state-desktop" class="text-center text-sm text-slate-400 py-8 hidden">No deals match your search.</p>
+      </div>
+
+      <!-- Mobile cards -->
+      <div id="deals-cards" class="md:hidden space-y-3"></div>
+      <p id="empty-state-mobile" class="text-center text-sm text-slate-400 py-8 hidden md:hidden">No deals match your search.</p>
+    </section>
+
+  </main>
+
+  <!-- Deal Creation / Edit Modal -->
+  <div id="deal-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div id="deal-modal-backdrop" class="absolute inset-0 bg-slate-900/50"></div>
+    <div id="modal-content" class="relative bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto p-5">
+      <div class="flex items-center justify-between mb-4">
+        <h2 id="form-title" class="text-base font-semibold text-slate-900">New Deal</h2>
+        <button type="button" id="close-modal-btn" aria-label="Close"
+                class="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
+      </div>
+
+      <form id="deal-form" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" novalidate>
+
+        <div class="lg:col-span-2">
+          <label class="block text-sm font-medium text-slate-700 mb-1" for="dealName">Deal Name <span class="text-red-500">*</span></label>
+          <input id="dealName" name="dealName" type="text" placeholder="e.g. Smith Residence"
+                 class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400">
+          <p class="text-xs text-red-500 mt-1 hidden" data-error-for="dealName">Deal Name is required.</p>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1" for="status">Status <span class="text-red-500">*</span></label>
+          <select id="status" name="status"
+                  class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400">
+            <option value="" disabled selected>Select status…</option>
+            <option value="M1">M1</option>
+            <option value="Site Survey">Site Survey</option>
+            <option value="CAD">CAD</option>
+            <option value="AHJ">AHJ</option>
+            <option value="Install Ready">Install Ready</option>
+            <option value="Install Scheduled">Install Scheduled</option>
+            <option value="Installing">Installing</option>
+            <option value="Post Install">Post Install</option>
+          </select>
+          <p class="text-xs text-red-500 mt-1 hidden" data-error-for="status">Status is required.</p>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1" for="dateSold">Date Sold <span class="text-red-500">*</span></label>
+          <div class="relative">
+            <input id="dateSold" name="dateSold" type="text" inputmode="numeric" placeholder="MM/DD/YYYY" maxlength="10" autocomplete="off"
+                   class="w-full rounded-md border border-slate-300 px-3 py-2 pr-9 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400">
+            <button type="button" data-date-target="dateSold" aria-label="Open calendar"
+                    class="date-picker-trigger absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="5" width="18" height="16" rx="2"></rect>
+                <path d="M3 10h18M8 3v4M16 3v4"></path>
+              </svg>
+            </button>
+          </div>
+          <p class="text-xs text-red-500 mt-1 hidden" data-error-for="dateSold">Enter a valid date (MM/DD/YYYY).</p>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1" for="installedDate">Installed Date</label>
+          <div class="relative">
+            <input id="installedDate" name="installedDate" type="text" inputmode="numeric" placeholder="MM/DD/YYYY" maxlength="10" autocomplete="off"
+                   class="w-full rounded-md border border-slate-300 px-3 py-2 pr-9 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400">
+            <button type="button" data-date-target="installedDate" aria-label="Open calendar"
+                    class="date-picker-trigger absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="5" width="18" height="16" rx="2"></rect>
+                <path d="M3 10h18M8 3v4M16 3v4"></path>
+              </svg>
+            </button>
+          </div>
+          <p class="text-xs text-red-500 mt-1 hidden" data-error-for="installedDate">Enter a valid date (MM/DD/YYYY).</p>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1" for="systemSize">System Size (kW)</label>
+          <input id="systemSize" name="systemSize" type="number" min="0" step="0.01" placeholder="0"
+                 class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400">
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1" for="closer">Closer</label>
+          <input id="closer" name="closer" type="text" placeholder="—"
+                 class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400">
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1" for="setter">Setter</label>
+          <input id="setter" name="setter" type="text" placeholder="—"
+                 class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400">
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1" for="team">Team</label>
+          <input id="team" name="team" type="text" placeholder="—" list="team-options" autocomplete="off"
+                 class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400">
+          <datalist id="team-options"></datalist>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1" for="paidValue">Paid Value ($)</label>
+          <input id="paidValue" name="paidValue" type="number" min="0" step="0.01" placeholder="0"
+                 class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400">
+        </div>
+
+        <div class="lg:col-span-4 flex justify-end gap-3 pt-2">
+          <button type="button" id="cancel-edit-btn"
+                  class="bg-white text-slate-700 text-sm font-medium px-5 py-2.5 rounded-md border border-slate-300 hover:bg-slate-50 transition">
+            Cancel
+          </button>
+          <button type="submit" id="submit-btn"
+                  class="bg-slate-900 text-white text-sm font-medium px-5 py-2.5 rounded-md hover:bg-slate-700 transition">
+            Add Deal
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Row Actions Menu -->
+  <div id="row-actions-menu" class="hidden fixed z-[60] bg-white border border-slate-200 rounded-md shadow-lg py-1 w-32">
+    <button type="button" data-menu-action="edit" class="w-full text-left px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100">Edit</button>
+    <button type="button" data-menu-action="delete" class="w-full text-left px-3 py-1.5 text-sm text-red-600 hover:bg-red-50">Delete</button>
+  </div>
+
+  <!-- Date Picker Popup -->
+  <div id="date-picker-popup" class="hidden fixed z-[60] bg-white border border-slate-200 rounded-lg shadow-lg p-3 w-64">
+    <div class="flex items-center justify-between mb-2">
+      <button type="button" id="dp-prev" aria-label="Previous month"
+              class="px-2 py-1 text-slate-500 hover:text-slate-900 rounded hover:bg-slate-100">&lsaquo;</button>
+      <span id="dp-month-label" class="text-sm font-medium text-slate-900"></span>
+      <button type="button" id="dp-next" aria-label="Next month"
+              class="px-2 py-1 text-slate-500 hover:text-slate-900 rounded hover:bg-slate-100">&rsaquo;</button>
+    </div>
+    <div class="grid grid-cols-7 text-center text-xs text-slate-400 mb-1">
+      <span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span>
+    </div>
+    <div id="dp-days" class="grid grid-cols-7 gap-y-1 text-center text-sm"></div>
+    <div class="flex justify-between pt-2 mt-2 border-t border-slate-100">
+      <button type="button" id="dp-today" class="text-xs font-medium text-slate-600 hover:text-slate-900">Today</button>
+      <button type="button" id="dp-clear" class="text-xs font-medium text-slate-400 hover:text-red-600">Clear</button>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
