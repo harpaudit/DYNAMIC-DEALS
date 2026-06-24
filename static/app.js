@@ -2,6 +2,7 @@ const STORAGE_KEY = "apex_dynamic_deals";
 const TEAMS_STORAGE_KEY = "apex_dynamic_known_teams";
 const CLOSERS_STORAGE_KEY = "apex_dynamic_known_closers";
 const SETTERS_STORAGE_KEY = "apex_dynamic_known_setters";
+const CLOSER_TEAM_MAP_KEY = "apex_dynamic_closer_team_map";
 const STATUS_OPTIONS = ["M1", "Site Survey", "CAD", "AHJ", "Install Ready", "Install Scheduled", "Installing", "Post Install"];
 const STATUS_MIGRATIONS = { "CAD AHJ Install Ready": "Install Ready" };
 const PAY_DAYS_AFTER_INSTALL = 30;
@@ -107,7 +108,7 @@ function closeSuggestions() {
   activeSuggestionsEl = null;
 }
 
-function setupAutocomplete(inputEl, suggestionsEl, store) {
+function setupAutocomplete(inputEl, suggestionsEl, store, onSelect) {
   function renderSuggestions() {
     const query = inputEl.value.trim().toLowerCase();
     const matches = Array.from(store.known)
@@ -139,6 +140,7 @@ function setupAutocomplete(inputEl, suggestionsEl, store) {
     inputEl.value = btn.dataset.suggestion;
     inputEl.focus();
     closeSuggestions();
+    if (onSelect) onSelect(btn.dataset.suggestion);
   });
 }
 
@@ -164,6 +166,31 @@ deals.forEach((d) => {
 teamsStore.save();
 closersStore.save();
 settersStore.save();
+
+function loadCloserTeamMap() {
+  try {
+    const raw = localStorage.getItem(CLOSER_TEAM_MAP_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveCloserTeamMap() {
+  localStorage.setItem(CLOSER_TEAM_MAP_KEY, JSON.stringify(closerTeamMap));
+}
+
+function rememberCloserTeam(closer, team) {
+  if (!closer || !team) return;
+  closerTeamMap[closer] = team;
+  saveCloserTeamMap();
+}
+
+const closerTeamMap = loadCloserTeamMap();
+deals.forEach((d) => {
+  if (d.closer && d.team) closerTeamMap[d.closer] = d.team;
+});
+saveCloserTeamMap();
 
 function isoToDisplayDate(iso) {
   if (!iso) return "";
@@ -713,6 +740,7 @@ form.addEventListener("submit", (e) => {
   closersStore.remember(dealData.closer);
   settersStore.remember(dealData.setter);
   teamsStore.remember(dealData.team);
+  rememberCloserTeam(dealData.closer, dealData.team);
   closeModal();
   rerenderAll();
 });
@@ -863,6 +891,9 @@ window.addEventListener("scroll", () => {
 }, true);
 
 setupAutocomplete(form.team, teamSuggestionsEl, teamsStore);
-setupAutocomplete(form.closer, closerSuggestionsEl, closersStore);
+setupAutocomplete(form.closer, closerSuggestionsEl, closersStore, (closer) => {
+  const team = closerTeamMap[closer];
+  if (team) form.team.value = team;
+});
 setupAutocomplete(form.setter, setterSuggestionsEl, settersStore);
 rerenderAll();
