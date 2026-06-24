@@ -1,5 +1,7 @@
 const STORAGE_KEY = "apex_dynamic_deals";
 const TEAMS_STORAGE_KEY = "apex_dynamic_known_teams";
+const CLOSERS_STORAGE_KEY = "apex_dynamic_known_closers";
+const SETTERS_STORAGE_KEY = "apex_dynamic_known_setters";
 const STATUS_OPTIONS = ["M1", "Site Survey", "CAD", "AHJ", "Install Ready", "Install Scheduled", "Installing", "Post Install"];
 const STATUS_MIGRATIONS = { "CAD AHJ Install Ready": "Install Ready" };
 const PAY_DAYS_AFTER_INSTALL = 30;
@@ -18,7 +20,9 @@ const tableBody = document.getElementById("deals-table-body");
 const cardsContainer = document.getElementById("deals-cards");
 const emptyStateDesktop = document.getElementById("empty-state-desktop");
 const emptyStateMobile = document.getElementById("empty-state-mobile");
-const teamOptionsList = document.getElementById("team-options");
+const teamSuggestionsEl = document.getElementById("team-suggestions");
+const closerSuggestionsEl = document.getElementById("closer-suggestions");
+const setterSuggestionsEl = document.getElementById("setter-suggestions");
 const statusTabsContainer = document.getElementById("status-tabs");
 const modalContent = document.getElementById("modal-content");
 const datePickerPopup = document.getElementById("date-picker-popup");
@@ -31,6 +35,17 @@ const dpClearBtn = document.getElementById("dp-clear");
 const rowActionsMenu = document.getElementById("row-actions-menu");
 const overdueBanner = document.getElementById("overdue-banner");
 const overdueBannerText = document.getElementById("overdue-banner-text");
+const reportRoleSelect = document.getElementById("report-role-select");
+const reportRepSelect = document.getElementById("report-rep-select");
+const reportDownloadPngBtn = document.getElementById("report-download-png-btn");
+const reportDownloadPdfBtn = document.getElementById("report-download-pdf-btn");
+const reportEmptyState = document.getElementById("report-empty-state");
+const reportPreviewWrapper = document.getElementById("report-preview-wrapper");
+const reportPreview = document.getElementById("report-preview");
+const reportRepNameEl = document.getElementById("report-rep-name");
+const reportRepRoleEl = document.getElementById("report-rep-role");
+const reportGeneratedDateEl = document.getElementById("report-generated-date");
+const reportTableBody = document.getElementById("report-table-body");
 
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
@@ -59,31 +74,72 @@ function saveDeals(deals) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(deals));
 }
 
-function loadKnownTeams() {
-  try {
-    const raw = localStorage.getItem(TEAMS_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
+function createKnownValuesStore(storageKey) {
+  function load() {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
   }
+
+  function save() {
+    localStorage.setItem(storageKey, JSON.stringify(Array.from(known)));
+  }
+
+  function remember(value) {
+    if (!value || known.has(value)) return;
+    known.add(value);
+    save();
+  }
+
+  const known = new Set(load());
+  return { known, save, remember };
 }
 
-function saveKnownTeams(teamsSet) {
-  localStorage.setItem(TEAMS_STORAGE_KEY, JSON.stringify(Array.from(teamsSet)));
+let activeSuggestionsEl = null;
+
+function closeSuggestions() {
+  if (!activeSuggestionsEl) return;
+  activeSuggestionsEl.classList.add("hidden");
+  activeSuggestionsEl.innerHTML = "";
+  activeSuggestionsEl = null;
 }
 
-function renderTeamOptions() {
-  teamOptionsList.innerHTML = Array.from(knownTeams)
-    .sort((a, b) => a.localeCompare(b))
-    .map((team) => `<option value="${escapeHtml(team)}"></option>`)
-    .join("");
-}
+function setupAutocomplete(inputEl, suggestionsEl, store) {
+  function renderSuggestions() {
+    const query = inputEl.value.trim().toLowerCase();
+    const matches = Array.from(store.known)
+      .filter((value) => !query || value.toLowerCase().includes(query))
+      .sort((a, b) => a.localeCompare(b))
+      .slice(0, 8);
 
-function rememberTeam(team) {
-  if (!team || knownTeams.has(team)) return;
-  knownTeams.add(team);
-  saveKnownTeams(knownTeams);
-  renderTeamOptions();
+    if (matches.length === 0) {
+      closeSuggestions();
+      return;
+    }
+
+    suggestionsEl.innerHTML = matches
+      .map(
+        (value) =>
+          `<button type="button" class="block w-full text-left px-3 py-1.5 text-sm hover:bg-slate-100" data-suggestion="${escapeHtml(value)}">${escapeHtml(value)}</button>`
+      )
+      .join("");
+    suggestionsEl.classList.remove("hidden");
+    activeSuggestionsEl = suggestionsEl;
+  }
+
+  inputEl.addEventListener("input", renderSuggestions);
+  inputEl.addEventListener("focus", renderSuggestions);
+
+  suggestionsEl.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-suggestion]");
+    if (!btn) return;
+    inputEl.value = btn.dataset.suggestion;
+    inputEl.focus();
+    closeSuggestions();
+  });
 }
 
 let deals = loadDeals();
@@ -97,9 +153,17 @@ deals.forEach((d) => {
 });
 if (statusMigrated) saveDeals(deals);
 
-const knownTeams = new Set(loadKnownTeams());
-deals.forEach((d) => { if (d.team) knownTeams.add(d.team); });
-saveKnownTeams(knownTeams);
+const teamsStore = createKnownValuesStore(TEAMS_STORAGE_KEY);
+const closersStore = createKnownValuesStore(CLOSERS_STORAGE_KEY);
+const settersStore = createKnownValuesStore(SETTERS_STORAGE_KEY);
+deals.forEach((d) => {
+  if (d.team) teamsStore.known.add(d.team);
+  if (d.closer) closersStore.known.add(d.closer);
+  if (d.setter) settersStore.known.add(d.setter);
+});
+teamsStore.save();
+closersStore.save();
+settersStore.save();
 
 function isoToDisplayDate(iso) {
   if (!iso) return "";
@@ -432,10 +496,97 @@ function rerenderList() {
   renderCards(list);
 }
 
+function getUniqueRepNames(role) {
+  const field = role === "setter" ? "setter" : "closer";
+  const names = new Set();
+  deals.forEach((d) => {
+    const value = (d[field] || "").trim();
+    if (value) names.add(value);
+  });
+  return Array.from(names).sort((a, b) => a.localeCompare(b));
+}
+
+function renderReport() {
+  const role = reportRoleSelect.value;
+  const repName = reportRepSelect.value;
+
+  if (!repName) {
+    reportPreviewWrapper.classList.add("hidden");
+    reportEmptyState.classList.remove("hidden");
+    reportDownloadPngBtn.disabled = true;
+    reportDownloadPdfBtn.disabled = true;
+    return;
+  }
+
+  const field = role === "setter" ? "setter" : "closer";
+  const repDeals = deals
+    .filter((d) => (d[field] || "").trim() === repName)
+    .slice()
+    .sort((a, b) => new Date(b.dateSold) - new Date(a.dateSold));
+
+  reportTableBody.innerHTML = repDeals
+    .map(
+      (d) => `
+        <tr class="border-b border-slate-100">
+          <td class="py-2 pr-4 font-medium text-slate-900">${escapeHtml(d.dealName)}</td>
+          <td class="py-2 pr-4">${escapeHtml(d.status)}</td>
+          <td class="py-2 pr-4">${formatDate(d.dateSold)}</td>
+          <td class="py-2 pr-4">${formatDate(d.installedDate)}</td>
+          <td class="py-2 pr-4">${formatDate(getExpectedPayDate(d))}</td>
+          <td class="py-2 pr-4">${formatKw(d.systemSize)}</td>
+          <td class="py-2 pr-4">${escapeHtml(dashIfEmpty(d.team))}</td>
+          <td class="py-2 pr-4">${formatCurrency(d.paidValue)}</td>
+        </tr>
+      `
+    )
+    .join("");
+
+  reportRepNameEl.textContent = repName;
+  reportRepRoleEl.textContent = role === "setter" ? "Setter" : "Closer";
+  reportGeneratedDateEl.textContent = `Generated ${formatDate(todayIso())}`;
+
+  reportEmptyState.classList.add("hidden");
+  reportPreviewWrapper.classList.remove("hidden");
+  reportDownloadPngBtn.disabled = false;
+  reportDownloadPdfBtn.disabled = false;
+}
+
+function renderReportRepOptions() {
+  const names = getUniqueRepNames(reportRoleSelect.value);
+  const previousValue = reportRepSelect.value;
+  reportRepSelect.innerHTML =
+    `<option value="">Select a rep…</option>` +
+    names.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("");
+  reportRepSelect.value = names.includes(previousValue) ? previousValue : "";
+  renderReport();
+}
+
+function buildReportFilename(extension) {
+  const role = reportRoleSelect.value === "setter" ? "Setter" : "Closer";
+  const repName = reportRepSelect.value.replace(/[^a-z0-9]+/gi, "_");
+  return `DealReport_${role}_${repName}_${todayIso()}.${extension}`;
+}
+
+async function captureReportCanvas() {
+  return html2canvas(reportPreview, { backgroundColor: "#ffffff", scale: 2 });
+}
+
+function downloadCanvasAsPng(canvas, filename) {
+  canvas.toBlob((blob) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+}
+
 function rerenderAll() {
   renderKPIs();
   renderStatusTabs();
   renderOverdueBanner();
+  renderReportRepOptions();
   rerenderList();
 }
 
@@ -447,6 +598,7 @@ function openModal() {
 function closeModal() {
   dealModal.classList.add("hidden");
   closeDatePicker();
+  closeSuggestions();
   editingId = null;
   form.reset();
   formTitle.textContent = "New Deal";
@@ -558,7 +710,9 @@ form.addEventListener("submit", (e) => {
   }
 
   saveDeals(deals);
-  rememberTeam(dealData.team);
+  closersStore.remember(dealData.closer);
+  settersStore.remember(dealData.setter);
+  teamsStore.remember(dealData.team);
   closeModal();
   rerenderAll();
 });
@@ -575,6 +729,8 @@ document.addEventListener("keydown", (e) => {
     closeActionsMenu();
   } else if (!datePickerPopup.classList.contains("hidden")) {
     closeDatePicker();
+  } else if (activeSuggestionsEl) {
+    closeSuggestions();
   } else if (!dealModal.classList.contains("hidden")) {
     closeModal();
   }
@@ -583,6 +739,27 @@ tableBody.addEventListener("click", handleListClick);
 cardsContainer.addEventListener("click", handleListClick);
 searchInput.addEventListener("input", rerenderList);
 sortSelect.addEventListener("change", rerenderList);
+reportRoleSelect.addEventListener("change", renderReportRepOptions);
+reportRepSelect.addEventListener("change", renderReport);
+
+reportDownloadPngBtn.addEventListener("click", async () => {
+  const canvas = await captureReportCanvas();
+  downloadCanvasAsPng(canvas, buildReportFilename("png"));
+});
+
+reportDownloadPdfBtn.addEventListener("click", async () => {
+  const canvas = await captureReportCanvas();
+  const imgData = canvas.toDataURL("image/png");
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({
+    orientation: canvas.width > canvas.height ? "landscape" : "portrait",
+    unit: "px",
+    format: [canvas.width, canvas.height],
+  });
+  pdf.addImage(imgData, "PNG", 0, 0, canvas.width, canvas.height);
+  pdf.save(buildReportFilename("pdf"));
+});
+
 overdueBanner.addEventListener("click", () => {
   overdueOnly = !overdueOnly;
   if (overdueOnly) {
@@ -661,6 +838,13 @@ document.addEventListener("mousedown", (e) => {
   closeActionsMenu();
 });
 
+document.addEventListener("mousedown", (e) => {
+  if (!activeSuggestionsEl) return;
+  if (activeSuggestionsEl.contains(e.target)) return;
+  if (e.target === form.team || e.target === form.closer || e.target === form.setter) return;
+  closeSuggestions();
+});
+
 rowActionsMenu.addEventListener("click", (e) => {
   const btn = e.target.closest("[data-menu-action]");
   if (!btn) return;
@@ -678,5 +862,7 @@ window.addEventListener("scroll", () => {
   if (!rowActionsMenu.classList.contains("hidden")) positionActionsMenu(actionsMenuTriggerEl);
 }, true);
 
-renderTeamOptions();
+setupAutocomplete(form.team, teamSuggestionsEl, teamsStore);
+setupAutocomplete(form.closer, closerSuggestionsEl, closersStore);
+setupAutocomplete(form.setter, setterSuggestionsEl, settersStore);
 rerenderAll();
