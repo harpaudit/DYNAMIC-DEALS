@@ -6,6 +6,7 @@ const CLOSER_TEAM_MAP_KEY = "apex_dynamic_closer_team_map";
 const STATUS_OPTIONS = ["M1", "Site Survey", "CAD", "AHJ", "Install Ready", "Install Scheduled", "Installing", "Post Install"];
 const STATUS_MIGRATIONS = { "CAD AHJ Install Ready": "Install Ready" };
 const PAY_DAYS_AFTER_INSTALL = 30;
+const NEW_PAY_RULE_CUTOFF = "2026-05-14"; // deals sold on or after this date use 2-Friday rule
 
 const form = document.getElementById("deal-form");
 const formTitle = document.getElementById("form-title");
@@ -332,6 +333,17 @@ function formatDate(value) {
   return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
 
+function getNthFridayAfter(iso, n) {
+  const [year, month, day] = iso.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  // Find the Friday of the same Sun-Sat week (Sat wraps back to previous Friday)
+  const dow = date.getDay();
+  date.setDate(date.getDate() + (dow === 6 ? -1 : 5 - dow));
+  // Skip n full weeks: don't count this week's Friday, start from the following weeks
+  date.setDate(date.getDate() + n * 7);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 function addDaysToIso(iso, days) {
   const [year, month, day] = iso.split("-").map(Number);
   const date = new Date(year, month - 1, day);
@@ -345,7 +357,11 @@ function todayIso() {
 }
 
 function getExpectedPayDate(deal) {
-  return deal.installedDate ? addDaysToIso(deal.installedDate, PAY_DAYS_AFTER_INSTALL) : null;
+  if (!deal.installedDate) return null;
+  if (deal.dateSold && deal.dateSold >= NEW_PAY_RULE_CUTOFF) {
+    return getNthFridayAfter(deal.installedDate, 2);
+  }
+  return addDaysToIso(deal.installedDate, PAY_DAYS_AFTER_INSTALL);
 }
 
 function isOverdue(deal) {
@@ -403,7 +419,7 @@ function renderOverdueBanner() {
   overdueBanner.classList.toggle("bg-red-100", overdueOnly);
   overdueBannerText.textContent = overdueOnly
     ? `Showing ${overdueCount} overdue deal${overdueCount === 1 ? "" : "s"} only — click to show all deals.`
-    : `${overdueCount} deal${overdueCount === 1 ? "" : "s"} ${overdueCount === 1 ? "has" : "have"} an overdue payment — installed more than ${PAY_DAYS_AFTER_INSTALL} days ago with no payment recorded. Click to view.`;
+    : `${overdueCount} deal${overdueCount === 1 ? "" : "s"} ${overdueCount === 1 ? "has" : "have"} an overdue payment — past expected pay date with no payment recorded. Click to view.`;
 }
 
 function getFilteredSortedDeals() {
