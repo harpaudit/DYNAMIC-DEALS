@@ -48,6 +48,15 @@ const reportRepNameEl = document.getElementById("report-rep-name");
 const reportRepRoleEl = document.getElementById("report-rep-role");
 const reportGeneratedDateEl = document.getElementById("report-generated-date");
 const reportTableBody = document.getElementById("report-table-body");
+const detailModal = document.getElementById("detail-modal");
+const detailModalBackdrop = document.getElementById("detail-modal-backdrop");
+const closeDetailModalBtn = document.getElementById("close-detail-modal-btn");
+const detailModalTitle = document.getElementById("detail-modal-title");
+const detailInfoGrid = document.getElementById("detail-info-grid");
+const detailCommentInput = document.getElementById("detail-comment-input");
+const detailCommentSubmit = document.getElementById("detail-comment-submit");
+const detailCommentsList = document.getElementById("detail-comments-list");
+const detailCommentsEmpty = document.getElementById("detail-comments-empty");
 
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
@@ -62,6 +71,7 @@ let datePickerViewMonth = null;
 let actionsMenuTargetId = null;
 let actionsMenuTriggerEl = null;
 let overdueOnly = false;
+let detailModalId = null;
 
 function loadDeals() {
   try {
@@ -371,6 +381,110 @@ function isOverdue(deal) {
   return expectedPayDate < todayIso();
 }
 
+function formatCommentTimestamp(isoStr) {
+  const d = new Date(isoStr);
+  if (isNaN(d)) return "";
+  return d.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+function renderDetailComments(deal) {
+  const comments = deal.comments || [];
+  if (comments.length === 0) {
+    detailCommentsList.innerHTML = "";
+    detailCommentsEmpty.classList.remove("hidden");
+    return;
+  }
+  detailCommentsEmpty.classList.add("hidden");
+  detailCommentsList.innerHTML = comments
+    .slice()
+    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+    .map(
+      (c) => `
+        <div class="bg-slate-50 rounded-md px-4 py-3">
+          <p class="text-xs text-slate-400 mb-1">${escapeHtml(formatCommentTimestamp(c.createdAt))}</p>
+          <p class="text-sm text-slate-700 whitespace-pre-wrap">${escapeHtml(c.text)}</p>
+        </div>
+      `
+    )
+    .join("");
+  detailCommentsList.lastElementChild?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function renderDetailModal(deal) {
+  detailModalTitle.textContent = deal.dealName;
+  const overdue = isOverdue(deal);
+  const expectedPayDate = getExpectedPayDate(deal);
+
+  const infoFields = [
+    { label: "Status", value: deal.status, badge: true },
+    { label: "Date Sold", value: formatDate(deal.dateSold) },
+    { label: "Installed", value: formatDate(deal.installedDate) },
+    { label: "Expected Pay", value: formatDate(expectedPayDate), overdue },
+    { label: "Size (kW)", value: formatKw(deal.systemSize) },
+    { label: "Closer", value: dashIfEmpty(deal.closer) },
+    { label: "Setter", value: dashIfEmpty(deal.setter) },
+    { label: "Team", value: dashIfEmpty(deal.team) },
+    { label: "Paid ($)", value: formatCurrency(deal.paidValue) },
+  ];
+
+  detailInfoGrid.innerHTML = infoFields
+    .map((f) => {
+      let valueHtml;
+      if (f.badge) {
+        valueHtml = `<span class="text-xs font-medium bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">${escapeHtml(f.value)}</span>`;
+      } else if (f.overdue) {
+        valueHtml = `<span class="text-sm text-slate-800">${escapeHtml(f.value)}</span>
+                     <span class="ml-1 inline-block text-[10px] font-semibold uppercase tracking-wide text-red-700 bg-red-100 px-1.5 py-0.5 rounded">Overdue</span>`;
+      } else {
+        valueHtml = `<span class="text-sm text-slate-800">${escapeHtml(f.value)}</span>`;
+      }
+      return `
+        <div>
+          <p class="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">${escapeHtml(f.label)}</p>
+          <div>${valueHtml}</div>
+        </div>
+      `;
+    })
+    .join("");
+
+  renderDetailComments(deal);
+}
+
+function openDetailModal(id) {
+  const deal = deals.find((d) => d.id === id);
+  if (!deal) return;
+  detailModalId = id;
+  detailCommentInput.value = "";
+  renderDetailModal(deal);
+  detailModal.classList.remove("hidden");
+}
+
+function closeDetailModal() {
+  detailModal.classList.add("hidden");
+  detailModalId = null;
+  detailCommentInput.value = "";
+}
+
+function addComment() {
+  if (!detailModalId) return;
+  const text = detailCommentInput.value.trim();
+  if (!text) return;
+  const deal = deals.find((d) => d.id === detailModalId);
+  if (!deal) return;
+  if (!deal.comments) deal.comments = [];
+  deal.comments.push({ id: generateId(), text, createdAt: new Date().toISOString() });
+  saveDeals(deals);
+  detailCommentInput.value = "";
+  renderDetailComments(deal);
+}
+
 function renderKPIs() {
   const totalDeals = deals.length;
   const dealsWithPayments = deals.filter((d) => Number(d.paidValue) > 0).length;
@@ -456,7 +570,12 @@ function renderTable(list) {
     const tr = document.createElement("tr");
     tr.className = "hover:bg-slate-50";
     tr.innerHTML = `
-      <td class="py-2 pr-4 font-medium text-slate-900">${escapeHtml(d.dealName)}</td>
+      <td class="py-2 pr-4">
+        <button type="button" data-action="detail" data-id="${d.id}"
+                class="font-medium text-slate-900 text-left hover:underline cursor-pointer">
+          ${escapeHtml(d.dealName)}
+        </button>
+      </td>
       <td class="py-2 pr-4">${escapeHtml(d.status)}</td>
       <td class="py-2 pr-4">${formatDate(d.dateSold)}</td>
       <td class="py-2 pr-4">${formatDate(d.installedDate)}</td>
@@ -494,7 +613,10 @@ function renderCards(list) {
     card.className = "border border-slate-200 rounded-md p-4 space-y-1.5";
     card.innerHTML = `
       <div class="flex items-center justify-between">
-        <p class="font-semibold text-slate-900">${escapeHtml(d.dealName)}</p>
+        <button type="button" data-action="detail" data-id="${d.id}"
+                class="font-semibold text-slate-900 text-left hover:underline cursor-pointer">
+          ${escapeHtml(d.dealName)}
+        </button>
         <span class="text-xs font-medium bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">${escapeHtml(d.status)}</span>
       </div>
       <div class="grid grid-cols-2 gap-1 text-sm text-slate-600">
@@ -685,6 +807,12 @@ function handleListClick(e) {
   const btn = e.target.closest("[data-action]");
   if (!btn) return;
   const { action, id } = btn.dataset;
+
+  if (action === "detail") {
+    openDetailModal(id);
+    return;
+  }
+
   if (action !== "menu") return;
 
   if (actionsMenuTargetId === id && !rowActionsMenu.classList.contains("hidden")) {
@@ -775,6 +903,8 @@ document.addEventListener("keydown", (e) => {
     closeDatePicker();
   } else if (activeSuggestionsEl) {
     closeSuggestions();
+  } else if (!detailModal.classList.contains("hidden")) {
+    closeDetailModal();
   } else if (!dealModal.classList.contains("hidden")) {
     closeModal();
   }
@@ -912,4 +1042,12 @@ setupAutocomplete(form.closer, closerSuggestionsEl, closersStore, (closer) => {
   if (team) form.team.value = team;
 });
 setupAutocomplete(form.setter, setterSuggestionsEl, settersStore);
+
+closeDetailModalBtn.addEventListener("click", closeDetailModal);
+detailModalBackdrop.addEventListener("click", closeDetailModal);
+detailCommentSubmit.addEventListener("click", addComment);
+detailCommentInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) addComment();
+});
+
 rerenderAll();

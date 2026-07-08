@@ -285,6 +285,36 @@
     </div>
   </div>
 
+  <!-- Deal Detail Modal -->
+  <div id="detail-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div id="detail-modal-backdrop" class="absolute inset-0 bg-slate-900/50"></div>
+    <div id="detail-modal-content" class="relative bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+      <div class="sticky top-0 bg-white z-10 flex items-center justify-between px-5 py-4 border-b border-slate-100">
+        <h2 id="detail-modal-title" class="text-base font-semibold text-slate-900 pr-4 truncate"></h2>
+        <button type="button" id="close-detail-modal-btn" aria-label="Close"
+                class="shrink-0 text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
+      </div>
+      <div class="p-5">
+        <div id="detail-info-grid" class="grid grid-cols-2 sm:grid-cols-3 gap-4 pb-5 border-b border-slate-100"></div>
+        <div class="pt-5">
+          <h3 class="text-sm font-semibold text-slate-700 mb-3">Comments</h3>
+          <div class="mb-4">
+            <textarea id="detail-comment-input" rows="3" placeholder="Write a comment… (Ctrl+Enter to submit)"
+                      class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400 resize-none"></textarea>
+            <div class="flex justify-end mt-2">
+              <button type="button" id="detail-comment-submit"
+                      class="bg-slate-900 text-white text-sm font-medium px-4 py-2 rounded-md hover:bg-slate-700 transition">
+                Add Comment
+              </button>
+            </div>
+          </div>
+          <div id="detail-comments-list" class="space-y-3"></div>
+          <p id="detail-comments-empty" class="text-sm text-slate-400 text-center py-4">No comments yet.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Row Actions Menu -->
   <div id="row-actions-menu" class="hidden fixed z-[60] bg-white border border-slate-200 rounded-md shadow-lg py-1 w-32">
     <button type="button" data-menu-action="edit" class="w-full text-left px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100">Edit</button>
