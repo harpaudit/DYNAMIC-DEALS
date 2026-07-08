@@ -25,4 +25,8 @@ if ! curl -s -o /dev/null "$URL"; then
   done
 fi
 
-open "$URL"
+if [ -d "/Applications/Google Chrome.app" ]; then
+  open -a "Google Chrome" "$URL"
+else
+  open "$URL"
+fi
