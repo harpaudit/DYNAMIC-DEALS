@@ -26,6 +26,9 @@ const teamSuggestionsEl = document.getElementById("team-suggestions");
 const closerSuggestionsEl = document.getElementById("closer-suggestions");
 const setterSuggestionsEl = document.getElementById("setter-suggestions");
 const statusTabsContainer = document.getElementById("status-tabs");
+const pageSizeSelect = document.getElementById("page-size-select");
+const paginationControls = document.getElementById("pagination-controls");
+const paginationInfo = document.getElementById("pagination-info");
 const modalContent = document.getElementById("modal-content");
 const datePickerPopup = document.getElementById("date-picker-popup");
 const dpMonthLabel = document.getElementById("dp-month-label");
@@ -72,6 +75,8 @@ let actionsMenuTargetId = null;
 let actionsMenuTriggerEl = null;
 let overdueOnly = false;
 let detailModalId = null;
+let pageSize = 10;
+let currentPage = 1;
 
 function loadDeals() {
   try {
@@ -654,11 +659,37 @@ function escapeHtml(value) {
   return div.innerHTML;
 }
 
+function renderPagination(totalCount) {
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  if (currentPage > totalPages) currentPage = totalPages;
+
+  if (totalCount === 0) {
+    paginationInfo.textContent = "No deals";
+  } else {
+    const start = (currentPage - 1) * pageSize + 1;
+    const end = Math.min(currentPage * pageSize, totalCount);
+    paginationInfo.textContent = `${start}–${end} of ${totalCount}`;
+  }
+
+  paginationControls.innerHTML = `
+    <button type="button" data-page="prev" ${currentPage <= 1 ? "disabled" : ""}
+            class="px-2.5 py-1 rounded-md text-sm border border-slate-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50">&lsaquo;</button>
+    <span class="px-2 text-sm text-slate-600 whitespace-nowrap">Page ${currentPage} of ${totalPages}</span>
+    <button type="button" data-page="next" ${currentPage >= totalPages ? "disabled" : ""}
+            class="px-2.5 py-1 rounded-md text-sm border border-slate-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50">&rsaquo;</button>
+  `;
+}
+
 function rerenderList() {
   closeActionsMenu();
   const list = getFilteredSortedDeals();
-  renderTable(list);
-  renderCards(list);
+  const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
+  if (currentPage > totalPages) currentPage = totalPages;
+  const start = (currentPage - 1) * pageSize;
+  const pageList = list.slice(start, start + pageSize);
+  renderTable(pageList);
+  renderCards(pageList);
+  renderPagination(list.length);
 }
 
 function getUniqueRepNames(role) {
@@ -911,8 +942,26 @@ document.addEventListener("keydown", (e) => {
 });
 tableBody.addEventListener("click", handleListClick);
 cardsContainer.addEventListener("click", handleListClick);
-searchInput.addEventListener("input", rerenderList);
-sortSelect.addEventListener("change", rerenderList);
+searchInput.addEventListener("input", () => {
+  currentPage = 1;
+  rerenderList();
+});
+sortSelect.addEventListener("change", () => {
+  currentPage = 1;
+  rerenderList();
+});
+pageSizeSelect.addEventListener("change", () => {
+  pageSize = Number(pageSizeSelect.value);
+  currentPage = 1;
+  rerenderList();
+});
+paginationControls.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-page]");
+  if (!btn || btn.disabled) return;
+  if (btn.dataset.page === "prev") currentPage -= 1;
+  if (btn.dataset.page === "next") currentPage += 1;
+  rerenderList();
+});
 reportRoleSelect.addEventListener("change", renderReportRepOptions);
 reportRepSelect.addEventListener("change", renderReport);
 
@@ -940,12 +989,14 @@ overdueBanner.addEventListener("click", () => {
     statusFilter = "";
     searchInput.value = "";
   }
+  currentPage = 1;
   rerenderAll();
 });
 statusTabsContainer.addEventListener("click", (e) => {
   const btn = e.target.closest("[data-status]");
   if (!btn) return;
   statusFilter = btn.dataset.status;
+  currentPage = 1;
   renderStatusTabs();
   rerenderList();
 });

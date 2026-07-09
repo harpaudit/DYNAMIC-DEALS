@@ -102,6 +102,21 @@
       <!-- Mobile cards -->
       <div id="deals-cards" class="md:hidden space-y-3"></div>
       <p id="empty-state-mobile" class="text-center text-sm text-slate-400 py-8 hidden md:hidden">No deals match your search.</p>
+
+      <!-- Pagination -->
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mt-4 pt-4 border-t border-slate-100">
+        <div class="flex items-center gap-2 text-sm text-slate-500">
+          <label for="page-size-select">Rows per page:</label>
+          <select id="page-size-select"
+                  class="rounded-md border border-slate-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400">
+            <option value="10">10</option>
+            <option value="20">20</option>
+            <option value="50">50</option>
+          </select>
+          <span id="pagination-info"></span>
+        </div>
+        <div id="pagination-controls" class="flex items-center gap-1"></div>
+      </div>
     </section>
 
     <!-- D. Rep Reports -->
